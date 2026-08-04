@@ -27,7 +27,7 @@
 - [x] tRPC procedures for all features
 
 ## Testing & Deployment
-- [ ] Unit tests for all backend logic and calculations
-- [ ] Integration tests for API and database interactions
-- [ ] End-to-end tests for UI functionality
-- [ ] Prepare for GitHub release
+- [x] Unit tests for all backend logic and calculations
+- [x] Integration tests for API and database interactions
+- [x] End-to-end tests for UI functionality
+- [x] Prepare for GitHub release

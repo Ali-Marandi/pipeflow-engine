@@ -4,31 +4,54 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { PipeFlowDashboard } from "./components/PipeFlowDashboard";
+import Calculator from "./pages/Calculator";
+import MoodyDiagram from "./pages/MoodyDiagram";
+import PipeNetwork from "./pages/PipeNetwork";
+import History from "./pages/History";
+import About from "./pages/About";
 import Home from "./pages/Home";
+import { useState } from "react";
 
 function Router() {
-  // make sure to consider if you need authentication for certain routes
+  const { isAuthenticated, loading } = useAuth();
+  const [currentSection, setCurrentSection] = useState<'calculator' | 'moody' | 'network' | 'history' | 'about'>('calculator');
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="text-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Switch>
+        <Route path={"/"} component={Home} />
+        <Route path={"/404"} component={NotFound} />
+        <Route component={NotFound} />
+      </Switch>
+    );
+  }
+
   return (
-    <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
-      <Route component={NotFound} />
-    </Switch>
+    <PipeFlowDashboard currentSection={currentSection} onSectionChange={setCurrentSection}>
+      {currentSection === 'calculator' && <Calculator />}
+      {currentSection === 'moody' && <MoodyDiagram />}
+      {currentSection === 'network' && <PipeNetwork />}
+      {currentSection === 'history' && <History />}
+      {currentSection === 'about' && <About />}
+    </PipeFlowDashboard>
   );
 }
-
-// NOTE: About Theme
-// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
-//   to keep consistent foreground/background color across components
-// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
 
 function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider
-        defaultTheme="light"
-        // switchable
+        defaultTheme="dark"
       >
         <TooltipProvider>
           <Toaster />

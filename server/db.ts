@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { Calculation, calculations, Fluid, fluids, InsertCalculation, InsertFluid, InsertPipeMaterial, InsertUser, PipeMaterial, pipeMaterials, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -87,6 +87,48 @@ export async function getUserByOpenId(openId: string) {
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
 
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getFluids(userId: number | null) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(fluids).where(or(userId === null ? undefined : eq(fluids.userId, userId), eq(fluids.isPreset, true)));
+}
+
+export async function insertFluid(fluid: InsertFluid) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(fluids).values(fluid);
+}
+
+export async function getPipeMaterials(userId: number | null) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(pipeMaterials).where(or(userId === null ? undefined : eq(pipeMaterials.userId, userId), eq(pipeMaterials.isPreset, true)));
+}
+
+export async function insertPipeMaterial(material: InsertPipeMaterial) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(pipeMaterials).values(material);
+}
+
+export async function getCalculations(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(calculations).where(eq(calculations.userId, userId));
+}
+
+export async function insertCalculation(calculation: InsertCalculation) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(calculations).values(calculation);
+}
+
+export async function deleteCalculation(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(calculations).where(and(eq(calculations.id, id), eq(calculations.userId, userId)));
 }
 
 // TODO: add feature queries here as your schema grows.

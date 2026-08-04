@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { boolean, double, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -24,5 +24,45 @@ export const users = mysqlTable("users", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+export const fluids = mysqlTable("fluids", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  density: double("density").notNull(),
+  kinematicViscosity: double("kinematicViscosity").notNull(),
+  userId: int("userId"),
+  isPreset: boolean("isPreset").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Fluid = typeof fluids.$inferSelect;
+export type InsertFluid = typeof fluids.$inferInsert;
+
+export const pipeMaterials = mysqlTable("pipeMaterials", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  roughness: double("roughness").notNull(),
+  userId: int("userId"),
+  isPreset: boolean("isPreset").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PipeMaterial = typeof pipeMaterials.$inferSelect;
+export type InsertPipeMaterial = typeof pipeMaterials.$inferInsert;
+
+export const calculations = mysqlTable("calculations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  inputs: json("inputs").notNull(),
+  results: json("results").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Calculation = typeof calculations.$inferSelect;
+export type InsertCalculation = typeof calculations.$inferInsert;
 
 // TODO: Add your tables here

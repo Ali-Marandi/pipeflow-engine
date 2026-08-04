@@ -4,6 +4,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { UnitProvider } from "./contexts/UnitContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { PipeFlowDashboard } from "./components/PipeFlowDashboard";
 import Calculator from "./pages/Calculator";
@@ -53,10 +54,12 @@ function App() {
       <ThemeProvider
         defaultTheme="dark"
       >
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
+        <UnitProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
+        </UnitProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

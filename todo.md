@@ -31,3 +31,10 @@
 - [x] Integration tests for API and database interactions
 - [x] End-to-end tests for UI functionality
 - [x] Prepare for GitHub release
+
+## New Features (Phase 2)
+- [x] Real-time pressure drop vs. flow rate interactive chart
+- [x] Unit conversion system (SI/Imperial)
+- [x] Unit toggle button in UI
+- [ ] GitHub repository upload
+- [ ] GitHub Release v1.0.0 creation

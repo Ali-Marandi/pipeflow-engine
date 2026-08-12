@@ -9,6 +9,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "desktop": "electron .",
     "desktop:dist": "pnpm build && electron-builder --win nsis portable",
+    "build:windows": "node scripts/build-windows.mjs",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
@@ -78,6 +79,7 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
     "wouter": "^3.3.5",
+    "ws": "^8.21.3",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -89,10 +91,13 @@
     "@types/node": "^24.7.0",
     "@types/react": "^19.2.1",
     "@types/react-dom": "^19.2.1",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.4",
     "add": "^2.0.6",
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.31.4",
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12",
     "esbuild": "^0.25.0",
     "pnpm": "^10.15.1",
     "postcss": "^8.4.47",
@@ -103,19 +108,34 @@
     "typescript": "5.9.3",
     "vite": "^7.1.7",
     "vite-plugin-manus-runtime": "0.0.59",
-    "vitest": "^2.1.4",
-    "electron": "^37.2.6",
-    "electron-builder": "^26.0.12"
+    "vitest": "^2.1.4"
   },
   "main": "electron/main.cjs",
   "build": {
     "appId": "com.pipeflow.pro",
     "productName": "PipeFlow Pro",
     "asar": true,
-    "files": ["dist/**/*", "electron/**/*", "package.json"],
-    "win": { "target": ["nsis", "portable"], "artifactName": "PipeFlow-Pro-${version}-${arch}.${ext}" },
-    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true },
-    "portable": { "artifactName": "PipeFlow-Pro-${version}-${arch}-portable.${ext}" }
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "artifactName": "PipeFlow-Pro-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "portable": {
+      "artifactName": "PipeFlow-Pro-${version}-${arch}-portable.${ext}"
+    }
   },
   "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af",
   "pnpm": {

@@ -38,9 +38,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm desktop:dist
+      - run: pnpm build:windows
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ github.ref_name }}
       - name: Publish release artifacts
         uses: softprops/action-gh-release@v2
         with:

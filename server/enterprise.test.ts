@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { assertRole, createHydraulicJob, getAuditEvents, getHydraulicJob, getTelemetry, ingestTelemetry, recordAudit, resetEnterpriseStores, upsertNetwork } from "./enterprise";
+import { acknowledgeAlertIncident, assertRole, createHydraulicJob, getAlertIncidents, getAuditEvents, getHydraulicJob, getTelemetry, ingestTelemetry, recordAudit, resetEnterpriseStores, upsertAlertRule, upsertNetwork } from "./enterprise";
 
 describe("enterprise foundation", () => {
   beforeEach(() => resetEnterpriseStores());
@@ -25,6 +25,16 @@ describe("enterprise foundation", () => {
     const completed = getHydraulicJob(7, job.id);
     expect(completed.status).toBe("completed");
     expect(completed.result?.e1.totalHead).toBeGreaterThan(0);
+  });
+
+  it("creates, deduplicates, and acknowledges threshold alerts", () => {
+    upsertAlertRule({ ownerUserId: 7, name: "High pressure", metric: "pressure", source: "pump-1", operator: "gt", threshold: 2, severity: "critical", enabled: true, cooldownSeconds: 3600 });
+    ingestTelemetry(7, [{ source: "pump-1", metric: "pressure", value: 2.4, unit: "bar", timestamp: new Date().toISOString(), quality: "good" }]);
+    ingestTelemetry(7, [{ source: "pump-1", metric: "pressure", value: 2.7, unit: "bar", timestamp: new Date().toISOString(), quality: "good" }]);
+    const incidents = getAlertIncidents(7);
+    expect(incidents).toHaveLength(1);
+    expect(incidents[0]?.severity).toBe("critical");
+    expect(acknowledgeAlertIncident(7, incidents[0]!.id).status).toBe("acknowledged");
   });
 
   it("accepts valid telemetry and keeps an audit trail", () => {

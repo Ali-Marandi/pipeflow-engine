@@ -8,7 +8,9 @@ import { and, eq, or } from "drizzle-orm";
 import { getCalculations, getFluids, getPipeMaterials, insertCalculation, insertFluid, insertPipeMaterial, deleteCalculation } from "./db";
 import { head_loss, reynolds, velocity, friction_factor } from "./pipeflowCalculations";
 import { hydraulic_design } from "./advancedHydraulics";
-import { assertRole, createHydraulicJob, getAuditEvents, getHydraulicJob, getNetwork, getNetworks, getTelemetry, ingestTelemetry, recordAudit, upsertNetwork } from "./enterprise";
+import { acknowledgeAlertIncident, assertRole, createHydraulicJob, getAlertIncidents, getAlertRules, getAuditEvents, getHydraulicJob, getNetwork, getNetworks, getTelemetry, ingestTelemetry, recordAudit, upsertAlertRule, upsertNetwork } from "./enterprise";
+import { asStreamEvent, publishTelemetryBatch, telemetryStreamHealth } from "./redisTelemetry";
+import { publishTelemetry } from "./realtime";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -123,6 +125,23 @@ export const appRouter = router({
 
   enterprise: router({
     listNetworks: protectedProcedure.query(({ ctx }) => getNetworks(ctx.user.id)),
+    listAlertRules: protectedProcedure.query(({ ctx }) => getAlertRules(ctx.user.id)),
+    saveAlertRule: protectedProcedure.input(z.object({
+      id: z.string().uuid().optional(), name: z.string().min(1).max(160), metric: z.string().min(1).max(80), source: z.string().min(1).max(160).optional(),
+      operator: z.enum(["gt", "gte", "lt", "lte"]), threshold: z.number().finite(), severity: z.enum(["info", "warning", "critical"]), enabled: z.boolean().default(true), cooldownSeconds: z.number().int().min(0).max(86400).default(300),
+    })).mutation(({ input, ctx }) => {
+      assertRole(ctx.user.role as never, "engineer");
+      const rule = upsertAlertRule({ ...input, ownerUserId: ctx.user.id });
+      recordAudit(ctx.user.id, "alert-rule.upsert", "alert-rule", rule.id, { metric: rule.metric, severity: rule.severity });
+      return rule;
+    }),
+    listAlertIncidents: protectedProcedure.input(z.object({ limit: z.number().int().positive().max(500).default(100) })).query(({ input, ctx }) => getAlertIncidents(ctx.user.id, input.limit)),
+    acknowledgeAlert: protectedProcedure.input(z.object({ id: z.string().uuid() })).mutation(({ input, ctx }) => {
+      assertRole(ctx.user.role as never, "engineer");
+      const incident = acknowledgeAlertIncident(ctx.user.id, input.id);
+      recordAudit(ctx.user.id, "alert.acknowledge", "alert-incident", incident.id);
+      return incident;
+    }),
     saveNetwork: protectedProcedure.input(z.object({
       id: z.string().uuid().optional(), name: z.string().min(1).max(160),
       nodes: z.array(z.object({ id: z.string().min(1), kind: z.enum(["junction", "reservoir", "tank", "pump"]), label: z.string().min(1), elevationM: z.number().finite() })),
@@ -141,11 +160,16 @@ export const appRouter = router({
       return job;
     }),
     getHydraulicJob: protectedProcedure.input(z.object({ id: z.string().uuid() })).query(({ input, ctx }) => getHydraulicJob(ctx.user.id, input.id)),
-    ingestTelemetry: protectedProcedure.input(z.object({ points: z.array(z.object({ source: z.string().min(1), metric: z.string().min(1), value: z.number().finite(), unit: z.string().min(1), timestamp: z.string().datetime(), quality: z.enum(["good", "uncertain", "bad"]) })).min(1).max(250) })).mutation(({ input, ctx }) => {
+    ingestTelemetry: protectedProcedure.input(z.object({ points: z.array(z.object({ source: z.string().min(1), metric: z.string().min(1), value: z.number().finite(), unit: z.string().min(1), timestamp: z.string().datetime(), quality: z.enum(["good", "uncertain", "bad"]) })).min(1).max(250) })).mutation(async ({ input, ctx }) => {
       assertRole(ctx.user.role as never, "engineer");
       const count = ingestTelemetry(ctx.user.id, input.points);
-      recordAudit(ctx.user.id, "telemetry.ingest", "telemetry", "batch", { count });
-      return { accepted: count };
+      const delivery = await publishTelemetryBatch(input.points.map(point => asStreamEvent(String(ctx.user.id), point)), publishTelemetry);
+      recordAudit(ctx.user.id, "telemetry.ingest", "telemetry", "batch", { count, mode: delivery.mode });
+      return { accepted: count, delivery };
+    }),
+    telemetryHealth: protectedProcedure.query(({ ctx }) => {
+      assertRole(ctx.user.role as never, "viewer");
+      return telemetryStreamHealth();
     }),
     getTelemetry: protectedProcedure.input(z.object({ source: z.string().optional(), limit: z.number().int().positive().max(500).default(100) })).query(({ input, ctx }) => getTelemetry(ctx.user.id, input.source, input.limit)),
     getAudit: protectedProcedure.input(z.object({ limit: z.number().int().positive().max(500).default(100) })).query(({ input, ctx }) => getAuditEvents(ctx.user.id, input.limit)),

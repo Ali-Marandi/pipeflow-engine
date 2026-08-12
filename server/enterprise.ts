@@ -41,6 +41,36 @@ export interface TelemetryPoint {
   quality: "good" | "uncertain" | "bad";
 }
 
+export type AlertOperator = "gt" | "gte" | "lt" | "lte";
+export type AlertSeverity = "info" | "warning" | "critical";
+
+export interface AlertRule {
+  id: string;
+  ownerUserId: number;
+  name: string;
+  metric: string;
+  source?: string;
+  operator: AlertOperator;
+  threshold: number;
+  severity: AlertSeverity;
+  enabled: boolean;
+  cooldownSeconds: number;
+  updatedAt: string;
+}
+
+export interface AlertIncident {
+  id: string;
+  ruleId: string;
+  ownerUserId: number;
+  source: string;
+  metric: string;
+  value: number;
+  threshold: number;
+  severity: AlertSeverity;
+  status: "open" | "acknowledged";
+  timestamp: string;
+}
+
 export interface AuditEvent {
   id: string;
   actorUserId: number;
@@ -65,6 +95,9 @@ const networks = new Map<string, NetworkModel>();
 const jobs = new Map<string, HydraulicJob>();
 const telemetry = new Map<number, TelemetryPoint[]>();
 const auditEvents = new Map<number, AuditEvent[]>();
+const alertRules = new Map<number, AlertRule[]>();
+const alertIncidents = new Map<number, AlertIncident[]>();
+const alertCooldowns = new Map<string, number>();
 
 function now() { return new Date().toISOString(); }
 
@@ -90,6 +123,48 @@ export function upsertNetwork(input: Omit<NetworkModel, "id" | "version" | "upda
 }
 
 export function getNetworks(ownerUserId: number) { return Array.from(networks.values()).filter(n => n.ownerUserId === ownerUserId); }
+
+export function upsertAlertRule(input: Omit<AlertRule, "id" | "updatedAt"> & { id?: string }) {
+  const list = alertRules.get(input.ownerUserId) ?? [];
+  const existing = input.id ? list.find(rule => rule.id === input.id) : undefined;
+  const rule: AlertRule = { ...input, id: existing?.id ?? randomUUID(), updatedAt: now() };
+  const next = existing ? list.map(item => item.id === rule.id ? rule : item) : [rule, ...list];
+  alertRules.set(input.ownerUserId, next.slice(0, 200));
+  return rule;
+}
+
+export function getAlertRules(ownerUserId: number) { return alertRules.get(ownerUserId) ?? []; }
+export function getAlertIncidents(ownerUserId: number, limit = 100) { return (alertIncidents.get(ownerUserId) ?? []).slice(0, Math.min(limit, 500)); }
+export function acknowledgeAlertIncident(ownerUserId: number, id: string) {
+  const list = alertIncidents.get(ownerUserId) ?? [];
+  const incident = list.find(item => item.id === id);
+  if (!incident) throw new Error("alert incident not found");
+  incident.status = "acknowledged";
+  return incident;
+}
+
+function ruleMatches(rule: AlertRule, point: TelemetryPoint) {
+  if (!rule.enabled || rule.metric !== point.metric || (rule.source && rule.source !== point.source)) return false;
+  if (rule.operator === "gt") return point.value > rule.threshold;
+  if (rule.operator === "gte") return point.value >= rule.threshold;
+  if (rule.operator === "lt") return point.value < rule.threshold;
+  return point.value <= rule.threshold;
+}
+
+export function evaluateTelemetryAlerts(ownerUserId: number, points: TelemetryPoint[]) {
+  const rules = getAlertRules(ownerUserId);
+  const incidents: AlertIncident[] = [];
+  for (const point of points) for (const rule of rules) {
+    if (!ruleMatches(rule, point)) continue;
+    const key = `${ownerUserId}:${rule.id}:${point.source}`;
+    const previous = alertCooldowns.get(key) ?? 0;
+    if (Date.now() - previous < Math.max(0, rule.cooldownSeconds) * 1000) continue;
+    alertCooldowns.set(key, Date.now());
+    incidents.push({ id: randomUUID(), ruleId: rule.id, ownerUserId, source: point.source, metric: point.metric, value: point.value, threshold: rule.threshold, severity: rule.severity, status: "open", timestamp: now() });
+  }
+  if (incidents.length) alertIncidents.set(ownerUserId, [...incidents, ...(alertIncidents.get(ownerUserId) ?? [])].slice(0, 1000));
+  return incidents;
+}
 export function getNetwork(ownerUserId: number, id: string) {
   const network = networks.get(id);
   if (!network || network.ownerUserId !== ownerUserId) throw new Error("network not found");
@@ -127,6 +202,7 @@ export function ingestTelemetry(ownerUserId: number, points: TelemetryPoint[]) {
   const accepted = points.filter(p => Number.isFinite(p.value) && p.source.length > 0 && p.metric.length > 0);
   const list = telemetry.get(ownerUserId) ?? [];
   telemetry.set(ownerUserId, [...accepted, ...list].slice(0, 1000));
+  evaluateTelemetryAlerts(ownerUserId, accepted);
   return accepted.length;
 }
 export function getTelemetry(ownerUserId: number, source?: string, limit = 100) {
@@ -134,4 +210,4 @@ export function getTelemetry(ownerUserId: number, source?: string, limit = 100) 
 }
 export function getAuditEvents(ownerUserId: number, limit = 100) { return (auditEvents.get(ownerUserId) ?? []).slice(0, Math.min(limit, 500)); }
 
-export function resetEnterpriseStores() { networks.clear(); jobs.clear(); telemetry.clear(); auditEvents.clear(); }
+export function resetEnterpriseStores() { networks.clear(); jobs.clear(); telemetry.clear(); auditEvents.clear(); alertRules.clear(); alertIncidents.clear(); alertCooldowns.clear(); }

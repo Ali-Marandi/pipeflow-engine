@@ -1,5 +1,5 @@
 {
-  "name": "pipeflow-web",
+  "name": "pipeflow-pro",
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
@@ -7,6 +7,8 @@
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
+    "desktop": "electron .",
+    "desktop:dist": "pnpm build && electron-builder --win nsis portable",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
@@ -101,7 +103,19 @@
     "typescript": "5.9.3",
     "vite": "^7.1.7",
     "vite-plugin-manus-runtime": "0.0.59",
-    "vitest": "^2.1.4"
+    "vitest": "^2.1.4",
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.pipeflow.pro",
+    "productName": "PipeFlow Pro",
+    "asar": true,
+    "files": ["dist/**/*", "electron/**/*", "package.json"],
+    "win": { "target": ["nsis", "portable"], "artifactName": "PipeFlow-Pro-${version}-${arch}.${ext}" },
+    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true },
+    "portable": { "artifactName": "PipeFlow-Pro-${version}-${arch}-portable.${ext}" }
   },
   "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af",
   "pnpm": {

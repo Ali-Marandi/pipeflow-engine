@@ -7,6 +7,8 @@ import { z } from "zod";
 import { and, eq, or } from "drizzle-orm";
 import { getCalculations, getFluids, getPipeMaterials, insertCalculation, insertFluid, insertPipeMaterial, deleteCalculation } from "./db";
 import { head_loss, reynolds, velocity, friction_factor } from "./pipeflowCalculations";
+import { hydraulic_design } from "./advancedHydraulics";
+import { assertRole, createHydraulicJob, getAuditEvents, getHydraulicJob, getNetwork, getNetworks, getTelemetry, ingestTelemetry, recordAudit, upsertNetwork } from "./enterprise";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -70,6 +72,20 @@ export const appRouter = router({
           headLoss: h_loss,
         };
       }),
+    hydraulicDesign: publicProcedure
+      .input(z.object({
+        pipeDiameter: z.number().positive(),
+        pipeLength: z.number().positive(),
+        flowRate: z.number().nonnegative(),
+        frictionFactor: z.number().nonnegative(),
+        fluidDensity: z.number().positive(),
+        fittings: z.array(z.object({ name: z.string().min(1), coefficient: z.number().nonnegative() })).default([]),
+        staticHead: z.number().nonnegative().default(0),
+        pumpEfficiency: z.number().gt(0).lte(1).default(0.75),
+        operatingHoursPerYear: z.number().nonnegative().default(0),
+        electricityPricePerKwh: z.number().nonnegative().default(0),
+      }))
+      .mutation(({ input }) => hydraulic_design(input.flowRate, input.pipeDiameter, input.pipeLength, input.frictionFactor, input.fluidDensity, input.fittings, input.staticHead, input.pumpEfficiency, input.operatingHoursPerYear, input.electricityPricePerKwh)),
     getCalculations: protectedProcedure
       .query(async ({ ctx }) => {
         return getCalculations(ctx.user.id);
@@ -103,6 +119,36 @@ export const appRouter = router({
         await deleteCalculation(input.id, ctx.user.id);
         return { success: true };
       }),
+  }),
+
+  enterprise: router({
+    listNetworks: protectedProcedure.query(({ ctx }) => getNetworks(ctx.user.id)),
+    saveNetwork: protectedProcedure.input(z.object({
+      id: z.string().uuid().optional(), name: z.string().min(1).max(160),
+      nodes: z.array(z.object({ id: z.string().min(1), kind: z.enum(["junction", "reservoir", "tank", "pump"]), label: z.string().min(1), elevationM: z.number().finite() })),
+      edges: z.array(z.object({ id: z.string().min(1), from: z.string().min(1), to: z.string().min(1), diameterM: z.number().positive(), lengthM: z.number().positive(), roughnessM: z.number().nonnegative(), flowM3s: z.number().nonnegative(), fittings: z.array(z.object({ name: z.string().min(1), coefficient: z.number().nonnegative() })) })),
+    })).mutation(({ input, ctx }) => {
+      assertRole(ctx.user.role as never, "engineer");
+      const network = upsertNetwork({ ...input, ownerUserId: ctx.user.id });
+      recordAudit(ctx.user.id, "network.upsert", "network", network.id, { version: network.version });
+      return network;
+    }),
+    submitHydraulicJob: protectedProcedure.input(z.object({ networkId: z.string().uuid(), fluidDensity: z.number().positive(), frictionFactor: z.number().nonnegative(), pumpEfficiency: z.number().gt(0).lte(1) })).mutation(({ input, ctx }) => {
+      assertRole(ctx.user.role as never, "engineer");
+      const network = getNetwork(ctx.user.id, input.networkId);
+      const job = createHydraulicJob(ctx.user.id, network, input.fluidDensity, input.frictionFactor, input.pumpEfficiency);
+      recordAudit(ctx.user.id, "hydraulic-job.submit", "network", network.id, { jobId: job.id });
+      return job;
+    }),
+    getHydraulicJob: protectedProcedure.input(z.object({ id: z.string().uuid() })).query(({ input, ctx }) => getHydraulicJob(ctx.user.id, input.id)),
+    ingestTelemetry: protectedProcedure.input(z.object({ points: z.array(z.object({ source: z.string().min(1), metric: z.string().min(1), value: z.number().finite(), unit: z.string().min(1), timestamp: z.string().datetime(), quality: z.enum(["good", "uncertain", "bad"]) })).min(1).max(250) })).mutation(({ input, ctx }) => {
+      assertRole(ctx.user.role as never, "engineer");
+      const count = ingestTelemetry(ctx.user.id, input.points);
+      recordAudit(ctx.user.id, "telemetry.ingest", "telemetry", "batch", { count });
+      return { accepted: count };
+    }),
+    getTelemetry: protectedProcedure.input(z.object({ source: z.string().optional(), limit: z.number().int().positive().max(500).default(100) })).query(({ input, ctx }) => getTelemetry(ctx.user.id, input.source, input.limit)),
+    getAudit: protectedProcedure.input(z.object({ limit: z.number().int().positive().max(500).default(100) })).query(({ input, ctx }) => getAuditEvents(ctx.user.id, input.limit)),
   }),
 
   // TODO: add feature routers here, e.g.

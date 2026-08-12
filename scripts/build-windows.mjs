@@ -10,7 +10,13 @@ if (expected && expected !== pkg.version) {
 }
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const run = (args) => execFileSync(pnpm, args, { cwd: root, stdio: "inherit", env: process.env });
+const run = (args) => execFileSync(pnpm, args, {
+  cwd: root,
+  stdio: "inherit",
+  env: process.env,
+  // Windows batch launchers such as pnpm.cmd require a shell when spawned from Node.
+  shell: process.platform === "win32",
+});
 
 run(["install", "--frozen-lockfile"]);
 run(["check"]);

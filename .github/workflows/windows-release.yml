@@ -42,6 +42,8 @@ jobs:
           RELEASE_VERSION: ${{ github.ref_name }}
       - name: Smoke test and benchmark packaged executable
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
         run: ./scripts/benchmark-windows.ps1 -Version $env:RELEASE_VERSION -LaunchIterations 2
       - name: Upload Windows validation report
         uses: actions/upload-artifact@v4

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { Button } from '@/components/ui/button';
+import { useUnits, type AppLocale } from '@/contexts/UnitContext';
 
 import { Calculator, BarChart3, Pipette, History, Info, LogOut } from 'lucide-react';
 
@@ -12,6 +13,7 @@ interface PipeFlowDashboardProps {
 
 export function PipeFlowDashboard({ currentSection, onSectionChange, children }: PipeFlowDashboardProps) {
   const { user, logout } = useAuth();
+  const { unitSystem, setUnitSystem, locale, setLocale, isRtl } = useUnits();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const navigationItems = [
@@ -23,7 +25,7 @@ export function PipeFlowDashboard({ currentSection, onSectionChange, children }:
   ];
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
+    <div dir={isRtl ? 'rtl' : 'ltr'} className="flex h-screen bg-background text-foreground">
       {/* Sidebar */}
       <div className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-card border-r border-border transition-all duration-300 flex flex-col`}>
         {/* Header */}
@@ -86,10 +88,23 @@ export function PipeFlowDashboard({ currentSection, onSectionChange, children }:
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Bar */}
-        <div className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+        <div className="bg-card border-b border-border px-6 py-4 flex items-center justify-between gap-4">
           <h2 className="text-2xl font-bold text-foreground">
             {navigationItems.find(item => item.id === currentSection)?.label}
           </h2>
+          <div className="flex items-center gap-2" aria-label="Globalization settings">
+            <select aria-label="Application language" value={locale} onChange={event => setLocale(event.target.value as AppLocale)} className="h-9 rounded-md border border-input bg-background px-2 text-sm">
+              <option value="en">English</option>
+              <option value="fa">فارسی</option>
+              <option value="ar">العربية</option>
+              <option value="es">Español</option>
+              <option value="de">Deutsch</option>
+            </select>
+            <select aria-label="Engineering unit system" value={unitSystem} onChange={event => setUnitSystem(event.target.value as typeof unitSystem)} className="h-9 rounded-md border border-input bg-background px-2 text-sm">
+              <option value="SI">SI</option>
+              <option value="Imperial">Imperial</option>
+            </select>
+          </div>
         </div>
 
         {/* Content Area */}

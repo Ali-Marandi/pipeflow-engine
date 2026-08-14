@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 
 let serverProcess;
+let serverDiagnostics = "";
 const isDev = !app.isPackaged;
 const isSmokeTest = process.argv.includes('--smoke-test');
 
@@ -12,16 +13,24 @@ function startBundledServer() {
   if (isDev) return;
   const serverEntry = path.join(process.resourcesPath, 'app.asar', 'dist', 'index.js');
   serverProcess = fork(serverEntry, [], { env: { ...process.env, NODE_ENV: 'production', PORT: '4173' }, silent: true });
-  serverProcess.on('error', (error) => console.error('PipeFlow backend failed to start', error));
+  const capture = chunk => {
+    serverDiagnostics = `${serverDiagnostics}${chunk.toString()}`.slice(-4000);
+  };
+  serverProcess.stdout?.on('data', capture);
+  serverProcess.stderr?.on('data', capture);
+  serverProcess.on('error', error => { capture(`Backend process error: ${error.message}\n`); console.error('PipeFlow backend failed to start', error); });
+  serverProcess.on('exit', (code, signal) => capture(`Backend exited: code=${code}, signal=${signal}\n`));
 }
 
 function waitForBundledServer(timeoutMs = 30000) {
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
     const attempt = () => {
-      const request = http.get('http://127.0.0.1:4173', response => {
+      const request = http.get('http://127.0.0.1:4173/healthz', response => {
         response.resume();
-        resolve();
+        if (response.statusCode === 200) return resolve();
+        if (Date.now() >= deadline) return reject(new Error(`bundled backend health check returned ${response.statusCode}`));
+        setTimeout(attempt, 250);
       });
       request.on('error', () => {
         if (Date.now() >= deadline) return reject(new Error('bundled backend did not become ready'));
@@ -52,13 +61,14 @@ async function runSmokeTest() {
     writeSmokeResult({ status: 'passed', durationMs: Date.now() - startedAt, version: app.getVersion() });
     app.exit(0);
   } catch (error) {
-    writeSmokeResult({ status: 'failed', durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error), version: app.getVersion() });
+    writeSmokeResult({ status: 'failed', durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error), backendDiagnostics: serverDiagnostics || undefined, version: app.getVersion() });
     app.exit(1);
   }
 }
 
 function createWindow() {
-  const url = isDev ? 'http://localhost:3000' : 'http://127.0.0.1:4173';
+  const baseUrl = isDev ? 'http://localhost:3000' : 'http://127.0.0.1:4173';
+  const url = isSmokeTest ? `${baseUrl}/?pipeflowSmokeTest=1` : baseUrl;
   const win = new BrowserWindow({
     width: 1440,
     height: 960,

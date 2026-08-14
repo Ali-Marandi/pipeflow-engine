@@ -36,9 +36,13 @@ for ($index = 1; $index -le $LaunchIterations; $index++) {
     throw "Portable smoke test exceeded $TimeoutSeconds seconds on iteration $index."
   }
   $stopwatch.Stop()
-  if ($process.ExitCode -ne 0) { throw "Portable smoke test failed with exit code $($process.ExitCode) on iteration $index." }
-  if (-not (Test-Path $resultFile)) { throw "Portable smoke test did not write its result file on iteration $index." }
-  $smoke = Get-Content -Raw $resultFile | ConvertFrom-Json
+  $smokePayload = if (Test-Path $resultFile) { Get-Content -Raw $resultFile } else { $null }
+  if ($process.ExitCode -ne 0) {
+    $details = if ($smokePayload) { "; smoke result: $smokePayload" } else { "; no smoke result file was written" }
+    throw "Portable smoke test failed with exit code $($process.ExitCode) on iteration $index$details"
+  }
+  if (-not $smokePayload) { throw "Portable smoke test did not write its result file on iteration $index." }
+  $smoke = $smokePayload | ConvertFrom-Json
   if ($smoke.status -ne "passed") { throw "Electron smoke test reported failure: $($smoke.error)" }
   $measurements += [PSCustomObject]@{
     iteration = $index

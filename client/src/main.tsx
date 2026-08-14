@@ -9,10 +9,11 @@ import { startLogin } from "./const";
 import "./index.css";
 
 const queryClient = new QueryClient();
+const isSmokeTest = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("pipeflowSmokeTest") === "1";
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || isSmokeTest) return;
 
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
 

@@ -46,7 +46,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: ghcr.io/ali-marandi/pipeflow-engine:v1.1.2
+          image: ghcr.io/ali-marandi/pipeflow-engine:v1.1.3
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

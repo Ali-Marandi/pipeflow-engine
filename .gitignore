@@ -112,3 +112,6 @@ temp/
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
 .project-config.json
+
+# Local and CI-generated Chaos evidence (uploaded as CI artifacts, not source)
+test-results/

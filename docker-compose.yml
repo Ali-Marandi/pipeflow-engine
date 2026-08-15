@@ -1,0 +1,71 @@
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-pipeflow}
+      MYSQL_USER: ${MYSQL_USER:-pipeflow}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  migrate:
+    build:
+      context: .
+      target: build
+    command: ["pnpm", "db:push"]
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-pipeflow}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-pipeflow}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    ports:
+      - "${PIPEFLOW_PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: mysql://${MYSQL_USER:-pipeflow}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-pipeflow}
+      REDIS_URL: redis://redis:6379
+      REDIS_TELEMETRY_STREAM: ${REDIS_TELEMETRY_STREAM:-pipeflow:telemetry:v1}
+      REALTIME_SHARED_TOKEN: ${REALTIME_SHARED_TOKEN:?Set REALTIME_SHARED_TOKEN in .env}
+      REALTIME_ALLOWED_ORIGINS: ${REALTIME_ALLOWED_ORIGINS:-http://localhost:3000}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/readyz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql-data:
+  redis-data:

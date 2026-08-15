@@ -1,0 +1,70 @@
+name: Chaos Engineering Gate
+
+on:
+  pull_request:
+    paths:
+      - "server/**"
+      - "scripts/chaos/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/chaos-engineering.yml"
+  push:
+    branches:
+      - enterprise/foundation-v2
+    paths:
+      - "server/**"
+      - "scripts/chaos/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/chaos-engineering.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chaos-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tenant-isolation-chaos:
+    name: Tenant isolation and Redis chaos gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      REDIS_URL: redis://127.0.0.1:6379
+      CHAOS_REPORT_PATH: test-results/chaos/redis-tenant-isolation.json
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Type-check tenant isolation controls
+        run: pnpm check
+      - name: Run deterministic tenant isolation chaos suite
+        run: pnpm test:chaos
+      - name: Run Redis Streams tenant isolation E2E
+        run: pnpm test:chaos:redis
+      - name: Upload chaos evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeflow-chaos-evidence-${{ github.run_id }}
+          path: test-results/chaos/
+          if-no-files-found: warn
+          retention-days: 14

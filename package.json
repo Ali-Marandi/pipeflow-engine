@@ -11,6 +11,8 @@
     "desktop:dist": "pnpm build && electron-builder --win nsis portable",
     "build:windows": "node scripts/build-windows.mjs",
     "test:redis:e2e": "tsx scripts/redis-streams-e2e.ts",
+    "test:chaos": "vitest run server/tenantIsolation.chaos.test.ts server/redisTelemetry.test.ts",
+    "test:chaos:redis": "tsx scripts/chaos/redis-tenant-isolation-e2e.ts",
     "benchmark:windows": "powershell -ExecutionPolicy Bypass -File scripts/benchmark-windows.ps1",
     "check": "tsc --noEmit",
     "format": "prettier --write .",

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { createClient, type RedisClientType } from "redis";
 import type { RealtimeTelemetryEvent } from "./realtime";
+import { assertTenantId } from "./tenantIsolation";
 
 export interface StreamTelemetryEvent extends RealtimeTelemetryEvent {
   eventId: string;
@@ -24,13 +25,24 @@ export interface TelemetryStreamHealth {
 type TelemetryDispatcher = (event: RealtimeTelemetryEvent) => void;
 
 const streamKey = process.env.REDIS_TELEMETRY_STREAM ?? "pipeflow:telemetry:v1";
-const instanceId = process.env.PIPEFLOW_INSTANCE_ID ?? `${hostname()}-${process.pid}`;
+const instanceId =
+  process.env.PIPEFLOW_INSTANCE_ID ?? `${hostname()}-${process.pid}`;
 // A dedicated group per gateway replica guarantees fanout to WebSocket clients connected to every pod.
-const groupName = process.env.REDIS_TELEMETRY_GROUP ?? `pipeflow-realtime-v1:${instanceId}`;
+const groupName =
+  process.env.REDIS_TELEMETRY_GROUP ?? `pipeflow-realtime-v1:${instanceId}`;
 const consumerName = process.env.REDIS_CONSUMER_NAME ?? instanceId;
-const maxLen = Number.parseInt(process.env.REDIS_TELEMETRY_MAXLEN ?? "100000", 10);
-const blockMs = Number.parseInt(process.env.REDIS_TELEMETRY_BLOCK_MS ?? "1000", 10);
-const claimIdleMs = Number.parseInt(process.env.REDIS_TELEMETRY_CLAIM_IDLE_MS ?? "30000", 10);
+const maxLen = Number.parseInt(
+  process.env.REDIS_TELEMETRY_MAXLEN ?? "100000",
+  10
+);
+const blockMs = Number.parseInt(
+  process.env.REDIS_TELEMETRY_BLOCK_MS ?? "1000",
+  10
+);
+const claimIdleMs = Number.parseInt(
+  process.env.REDIS_TELEMETRY_CLAIM_IDLE_MS ?? "30000",
+  10
+);
 
 let commandClient: RedisClientType | undefined;
 let blockingClient: RedisClientType | undefined;
@@ -54,15 +66,24 @@ function redisConfigured() {
 
 function toEvent(fields: Record<string, string>): StreamTelemetryEvent {
   const value = Number(fields.value);
-  if (!Number.isFinite(value) || !fields.tenantId || !fields.source || !fields.metric || !fields.unit || !fields.timestamp) {
+  if (
+    !Number.isFinite(value) ||
+    !fields.tenantId ||
+    !fields.source ||
+    !fields.metric ||
+    !fields.unit ||
+    !fields.timestamp
+  ) {
     throw new Error("invalid telemetry stream event");
   }
+  const tenantId = assertTenantId(fields.tenantId);
   const quality = fields.quality;
-  if (quality !== "good" && quality !== "uncertain" && quality !== "bad") throw new Error("invalid telemetry quality");
+  if (quality !== "good" && quality !== "uncertain" && quality !== "bad")
+    throw new Error("invalid telemetry quality");
   return {
     eventId: fields.eventId || randomUUID(),
     traceId: fields.traceId || fields.eventId || randomUUID(),
-    tenantId: fields.tenantId,
+    tenantId,
     source: fields.source,
     metric: fields.metric,
     value,
@@ -114,15 +135,27 @@ async function ensureGroup(client: RedisClientType) {
   try {
     await client.xGroupCreate(streamKey, groupName, "$", { MKSTREAM: true });
   } catch (error) {
-    if (!(error instanceof Error) || !error.message.includes("BUSYGROUP")) throw error;
+    if (!(error instanceof Error) || !error.message.includes("BUSYGROUP"))
+      throw error;
   }
 }
 
-export function asStreamEvent(tenantId: string, event: Omit<RealtimeTelemetryEvent, "tenantId">): StreamTelemetryEvent {
-  return { ...event, tenantId, eventId: randomUUID(), traceId: randomUUID() };
+export function asStreamEvent(
+  tenantId: string,
+  event: Omit<RealtimeTelemetryEvent, "tenantId">
+): StreamTelemetryEvent {
+  return {
+    ...event,
+    tenantId: assertTenantId(tenantId),
+    eventId: randomUUID(),
+    traceId: randomUUID(),
+  };
 }
 
-export async function publishTelemetryBatch(events: StreamTelemetryEvent[], fallbackDispatch: TelemetryDispatcher) {
+export async function publishTelemetryBatch(
+  events: StreamTelemetryEvent[],
+  fallbackDispatch: TelemetryDispatcher
+) {
   if (events.length === 0) return { accepted: 0, mode: health.mode };
   if (!redisConfigured()) {
     events.forEach(fallbackDispatch);
@@ -136,7 +169,11 @@ export async function publishTelemetryBatch(events: StreamTelemetryEvent[], fall
   const pipeline = client.multi();
   for (const event of events) {
     pipeline.xAdd(streamKey, "*", toFields(event), {
-      TRIM: { strategy: "MAXLEN", strategyModifier: "~", threshold: Math.max(1000, maxLen) },
+      TRIM: {
+        strategy: "MAXLEN",
+        strategyModifier: "~",
+        threshold: Math.max(1000, maxLen),
+      },
     });
   }
   await pipeline.execAsPipeline();
@@ -146,7 +183,12 @@ export async function publishTelemetryBatch(events: StreamTelemetryEvent[], fall
 
 async function consumeOnce(dispatch: TelemetryDispatcher) {
   const reader = await getBlockingClient();
-  const result = await reader.xReadGroup(groupName, consumerName, [{ key: streamKey, id: ">" }], { COUNT: 100, BLOCK: Math.max(100, blockMs) });
+  const result = await reader.xReadGroup(
+    groupName,
+    consumerName,
+    [{ key: streamKey, id: ">" }],
+    { COUNT: 100, BLOCK: Math.max(100, blockMs) }
+  );
   for (const stream of result ?? []) {
     for (const entry of stream.messages) {
       try {
@@ -157,7 +199,8 @@ async function consumeOnce(dispatch: TelemetryDispatcher) {
         health.acknowledged += 1;
       } catch (error) {
         health.failures += 1;
-        health.lastError = error instanceof Error ? error.message : String(error);
+        health.lastError =
+          error instanceof Error ? error.message : String(error);
       }
     }
   }
@@ -165,7 +208,14 @@ async function consumeOnce(dispatch: TelemetryDispatcher) {
 
 async function reclaimIdle(dispatch: TelemetryDispatcher) {
   const client = await getCommandClient();
-  const claimed = await client.xAutoClaim(streamKey, groupName, consumerName, Math.max(1000, claimIdleMs), "0-0", { COUNT: 100 });
+  const claimed = await client.xAutoClaim(
+    streamKey,
+    groupName,
+    consumerName,
+    Math.max(1000, claimIdleMs),
+    "0-0",
+    { COUNT: 100 }
+  );
   for (const entry of claimed.messages) {
     if (!entry) continue;
     try {
@@ -181,7 +231,9 @@ async function reclaimIdle(dispatch: TelemetryDispatcher) {
   }
 }
 
-export async function startTelemetryStreamWorker(dispatch: TelemetryDispatcher) {
+export async function startTelemetryStreamWorker(
+  dispatch: TelemetryDispatcher
+) {
   if (!redisConfigured() || workerRunning) return health;
   const client = await getCommandClient();
   await ensureGroup(client);
@@ -197,7 +249,8 @@ export async function startTelemetryStreamWorker(dispatch: TelemetryDispatcher) 
         }
       } catch (error) {
         health.failures += 1;
-        health.lastError = error instanceof Error ? error.message : String(error);
+        health.lastError =
+          error instanceof Error ? error.message : String(error);
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
